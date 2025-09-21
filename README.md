@@ -321,8 +321,9 @@ terraform destroy -auto-approve
 ## 📧 Contact
 
 For questions about this submission:
-- Email: [your-email@example.com]
-- GitHub: [your-github-profile]
+- Email: [muhammad.atx@gmail.com]
+- GitHub: [https://github.com/matx104]
+- LinkedIn: [https://www.linkedin.com/in/matx104/]
 
 ---
 
