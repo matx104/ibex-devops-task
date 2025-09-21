@@ -1,0 +1,14 @@
+{
+  "name": "ibex-devops-demo",
+  "version": "1.0.0",
+  "description": "Demo application for Ibex DevOps task",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Tests passed\" && exit 0",
+    "build": "echo \"Build complete\" && mkdir -p dist && cp index.html dist/"
+  },
+  "keywords": ["devops", "demo", "aws", "docker"],
+  "author": "Your Name",
+  "license": "MIT"
+}

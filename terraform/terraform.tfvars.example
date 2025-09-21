@@ -1,0 +1,27 @@
+# terraform.tfvars.example - Example Terraform Variables
+# Copy this file to terraform.tfvars and update with your values
+
+# AWS Configuration
+aws_region = "us-east-1"
+
+# Project Configuration
+project_name = "ibex-devops"
+environment  = "dev"
+
+# EC2 Configuration
+instance_type = "t2.micro"
+
+# Security Configuration
+# Replace with your actual IP address for better security
+# You can get your IP from: https://whatismyipaddress.com/
+allowed_ssh_ips = ["YOUR_IP_ADDRESS/32"]
+
+# S3 Configuration
+# Must be globally unique - add a random suffix or your username
+s3_bucket_name = "ibex-devops-artifacts-YOUR_UNIQUE_SUFFIX"
+
+# IAM Configuration
+create_iam_user = true
+
+# Docker Configuration
+docker_hub_username = "your_dockerhub_username"

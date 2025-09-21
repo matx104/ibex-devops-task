@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ibex DevOps Demo Application</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        .container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            max-width: 600px;
+            margin: 20px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .logo {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto 2rem;
+            background: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .info {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .info h2 {
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .info-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1rem;
+            border-radius: 8px;
+            transition: transform 0.3s ease;
+        }
+
+        .info-item:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 0.5rem;
+            opacity: 0.9;
+        }
+
+        .value {
+            font-size: 1.1rem;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: #10b981;
+            border-radius: 20px;
+            margin: 1rem 0;
+            font-weight: bold;
+            box-shadow: 0 2px 10px rgba(16, 185, 129, 0.3);
+        }
+
+        .tech-stack {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-top: 2rem;
+        }
+
+        .tech-badge {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.5rem 1rem;
+            border-radius: 15px;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+
+        .tech-badge:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.05);
+        }
+
+        .footer {
+            margin-top: 2rem;
+            opacity: 0.8;
+            font-size: 0.9rem;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+        }
+
+        .status {
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🚀</div>
+        
+        <h1>Ibex DevOps Demo</h1>
+        <p>Multi-Cloud DevOps Engineering Excellence</p>
+        
+        <div class="status">✅ Application Running</div>
+        
+        <div class="info">
+            <h2>Deployment Information</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="label">Environment</span>
+                    <span class="value" id="environment">Production</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Version</span>
+                    <span class="value" id="version">v1.0.0</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Deployment Time</span>
+                    <span class="value" id="deployment-time">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Container</span>
+                    <span class="value">Docker/Nginx</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="tech-stack">
+            <span class="tech-badge">AWS EC2</span>
+            <span class="tech-badge">Terraform</span>
+            <span class="tech-badge">Docker</span>
+            <span class="tech-badge">Jenkins/GitLab CI</span>
+            <span class="tech-badge">S3</span>
+            <span class="tech-badge">Nginx</span>
+        </div>
+        
+        <div class="footer">
+            <p>Successfully deployed via CI/CD Pipeline</p>
+            <p style="margin-top: 0.5rem; opacity: 0.7;">© 2024 Ibex DevOps Task Submission</p>
+        </div>
+    </div>
+
+    <script>
+        // Set deployment time
+        document.getElementById('deployment-time').textContent = new Date().toLocaleString();
+        
+        // Get environment from URL parameters or default
+        const urlParams = new URLSearchParams(window.location.search);
+        const env = urlParams.get('env') || 'Production';
+        document.getElementById('environment').textContent = env;
+        
+        // Simulate version from build
+        const version = `v1.0.${Math.floor(Math.random() * 100)}`;
+        document.getElementById('version').textContent = version;
+    </script>
+</body>
+</html>

@@ -1,0 +1,177 @@
+2025-09-21T18:20:43Z	INFO	[misconfig] Misconfiguration scanning is enabled
+2025-09-21T18:20:43Z	INFO	[misconfig] Need to update the checks bundle
+2025-09-21T18:20:43Z	INFO	[misconfig] Downloading the checks bundle...
+165.20 KiB / 165.20 KiB [-------------------------------------------------------------------------------------------------------------------------------------------------------------------] 100.00% ? p/s 100ms2025-09-21T18:20:46Z	INFO	[terraform scanner] Scanning root module	file_path="."
+2025-09-21T18:20:46Z	WARN	[terraform parser] Variable values were not found in the environment or variable files. Evaluating may not work correctly.	module="root" variables="public_key"
+2025-09-21T18:20:46Z	INFO	[terraform scanner] Scanning root module	file_path="."
+2025-09-21T18:20:46Z	INFO	Detected config files	num=2
+
+Report Summary
+
+┌─────────┬────────────────────────┬───────────────────┐
+│ Target  │          Type          │ Misconfigurations │
+├─────────┼────────────────────────┼───────────────────┤
+│ .       │ terraformplan-snapshot │         0         │
+├─────────┼────────────────────────┼───────────────────┤
+│ main.tf │ terraformplan-snapshot │         7         │
+└─────────┴────────────────────────┴───────────────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+
+
+main.tf (terraformplan-snapshot)
+================================
+Tests: 7 (SUCCESSES: 0, FAILURES: 7)
+Failures: 7 (UNKNOWN: 0, LOW: 2, MEDIUM: 0, HIGH: 4, CRITICAL: 1)
+
+AVD-AWS-0028 (HIGH): Instance does not require IMDS access to require a token.
+═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+IMDS v2 (Instance Metadata Service) introduced session authentication tokens which improve security when talking to IMDS.
+
+By default <code>aws_instance</code> resource sets IMDS session auth tokens to be optional.
+
+To fully protect IMDS you need to enable session tokens by using <code>metadata_options</code> block and its <code>http_tokens</code> variable set to <code>required</code>.
+
+
+See https://avd.aquasec.com/misconfig/avd-aws-0028
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ main.tf:189-217
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 189 ┌ resource "aws_instance" "docker_host" {
+ 190 │   ami                    = data.aws_ami.amazon_linux_2.id
+ 191 │   instance_type          = var.instance_type
+ 192 │   key_name              = aws_key_pair.ec2_key_pair.key_name
+ 193 │   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
+ 194 │   iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
+ 195 │   
+ 196 │   # User data script to install Docker
+ 197 └   user_data = base64encode(templatefile("${path.module}/scripts/user_data.sh", {
+ ...   
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+AVD-AWS-0088 (HIGH): Bucket does not have encryption enabled
+═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+S3 Buckets should be encrypted to protect the data that is stored within them if access is compromised.
+
+
+See https://avd.aquasec.com/misconfig/avd-aws-0088
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ main.tf:95-103
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  95 ┌ resource "aws_s3_bucket" "artifacts" {
+  96 │   bucket = var.s3_bucket_name
+  97 │ 
+  98 │   tags = {
+  99 │     Name        = "${var.project_name}-artifacts"
+ 100 │     Environment = var.environment
+ 101 │     ManagedBy   = "Terraform"
+ 102 │   }
+ 103 └ }
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+AVD-AWS-0089 (LOW): Bucket has logging disabled
+═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+Ensures S3 bucket logging is enabled for S3 buckets
+
+See https://avd.aquasec.com/misconfig/s3-bucket-logging
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ main.tf:95-103
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  95 ┌ resource "aws_s3_bucket" "artifacts" {
+  96 │   bucket = var.s3_bucket_name
+  97 │ 
+  98 │   tags = {
+  99 │     Name        = "${var.project_name}-artifacts"
+ 100 │     Environment = var.environment
+ 101 │     ManagedBy   = "Terraform"
+ 102 │   }
+ 103 └ }
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+AVD-AWS-0104 (CRITICAL): Security group rule allows unrestricted egress to any IP address.
+═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+Opening up ports to connect out to the public internet is generally to be avoided. You should restrict access to IP addresses or ranges that are explicitly required where possible.
+
+
+See https://avd.aquasec.com/misconfig/aws-vpc-no-public-egress-sgr
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ main.tf:84
+   via main.tf:79-85 (egress)
+    via main.tf:58-92 (aws_security_group.ec2_sg)
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  58   resource "aws_security_group" "ec2_sg" {
+  ..   
+  84 [     cidr_blocks = ["0.0.0.0/0"]
+  ..   
+  92   }
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+AVD-AWS-0107 (HIGH): Security group rule allows unrestricted ingress from any IP address.
+═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+Security groups provide stateful filtering of ingress and egress network traffic to AWS
+resources. It is recommended that no security group allows unrestricted ingress access to
+remote server administration ports, such as SSH to port 22 and RDP to port 3389.
+
+
+See https://avd.aquasec.com/misconfig/avd-aws-0107
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ main.tf:68
+   via main.tf:63-69 (ingress)
+    via main.tf:58-92 (aws_security_group.ec2_sg)
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  58   resource "aws_security_group" "ec2_sg" {
+  ..   
+  68 [     cidr_blocks = var.allowed_ssh_ips
+  ..   
+  92   }
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+AVD-AWS-0132 (HIGH): Bucket does not encrypt data with a customer managed key.
+═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+Encryption using AWS keys provides protection for your S3 buckets. To increase control of the encryption and manage factors like rotation use customer managed keys.
+
+
+See https://avd.aquasec.com/misconfig/avd-aws-0132
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ main.tf:95-103
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  95 ┌ resource "aws_s3_bucket" "artifacts" {
+  96 │   bucket = var.s3_bucket_name
+  97 │ 
+  98 │   tags = {
+  99 │     Name        = "${var.project_name}-artifacts"
+ 100 │     Environment = var.environment
+ 101 │     ManagedBy   = "Terraform"
+ 102 │   }
+ 103 └ }
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+AVD-AWS-0143 (LOW): One or more policies are attached directly to a user
+═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+CIS recommends that you apply IAM policies directly to groups and roles but not users. Assigning privileges at the group or role level reduces the complexity of access management as the number of users grow. Reducing access management complexity might in turn reduce opportunity for a principal to inadvertently receive or retain excessive privileges.
+
+
+See https://avd.aquasec.com/misconfig/avd-aws-0143
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ main.tf:236-245
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 236 ┌ resource "aws_iam_user" "cicd_user" {
+ 237 │   count = var.create_iam_user ? 1 : 0
+ 238 │   name  = "${var.project_name}-cicd-user"
+ 239 │ 
+ 240 │   tags = {
+ 241 │     Name        = "${var.project_name}-cicd-user"
+ 242 │     Environment = var.environment
+ 243 │     ManagedBy   = "Terraform"
+ 244 │   }
+ 245 └ }
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+

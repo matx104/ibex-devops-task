@@ -1,0 +1,17 @@
+⚠ Important: Beginning January 24th, 2023, application dependencies in container
+images will be scanned by default when using the snyk container test/monitor
+commands. If you are using Snyk in a CI pipeline, action may be required. Read
+https://snyk.io/blog/securing-container-applications-using-the-snyk-cli/ for
+more info.
+
+ ERROR   Authentication error (SNYK-0005)
+         Authentication credentials not recognized, or user access is not provisioned.  
+         Revise credentials and try again, or request access from your Snyk             
+         administrator.                                                                 
+                                                                                        
+           Use `snyk auth` to authenticate.                                             
+
+Status:  401 Unauthorized 
+Docs:    https://docs.snyk.io/scan-with-snyk/error-catalog#snyk-0005 
+                                                                     
+ID:      urn:snyk:interaction:2c0f6f74-acc8-4b86-87b1-50df71bb2e41 

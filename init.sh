@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# -----------------------------
+# Settings (edit if you like)
+# -----------------------------
+AWS_REGION_DEFAULT="us-east-2"           # Change if needed
+KEY_NAME_DEFAULT="ibex-task-key"         # EC2 key pair name used by Terraform
+INSTANCE_TYPE_DEFAULT="t2.micro"         # Free-tier eligible
+BUCKET_NAME_DEFAULT="ibex-task-artifacts-$(date +%Y%m%d)-$RANDOM"
+TF_DIR="terraform"
+KEYS_DIR="keys"
+SSH_KEY_PATH="$KEYS_DIR/id_rsa"
+AUTO_TFVARS="$TF_DIR/terraform.auto.tfvars"
+
+
+
+
+# Optional: start Jenkins in Docker after setup (false/true)
+START_JENKINS="${START_JENKINS:-true}" 
+
+
+# Detect the login user for docker group add (handles sudo)
+LOGIN_USER="${SUDO_USER:-$USER}"
+
+echo "==> Updating APT and installing base packages..."
+sudo apt-get update -y
+sudo apt-get install -y \
+  ca-certificates curl gnupg lsb-release unzip \
+  git jq software-properties-common
+
+
+# -----------------------------
+# AWS CLI v2 (if not present)
+# -----------------------------
+if ! command -v aws >/dev/null 2>&1; then
+  echo "==> Installing AWS CLI v2..."
+  tmpdir="$(mktemp -d)"
+  pushd "$tmpdir" >/dev/null
+  curl -sSLo awscliv2.zip "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+  unzip -q awscliv2.zip
+  sudo ./aws/install
+  popd >/dev/null
+  rm -rf "$tmpdir"
+else
+  echo "==> AWS CLI already installed: $(aws --version)"
+fi
+
+
+# Default region if none configured
+if ! aws configure get region >/dev/null 2>&1; then
+  echo "==> Setting default AWS region to ${AWS_REGION_DEFAULT} (override later with 'aws configure')"
+  aws configure set region "${AWS_REGION_DEFAULT}"
+fi
+
+
+# -----------------------------
+# Terraform (HashiCorp repo)
+# -----------------------------
+if ! command -v terraform >/dev/null 2>&1; then
+  echo "==> Installing Terraform..."
+  curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+  echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
+    sudo tee /etc/apt/sources.list.d/hashicorp.list >/dev/null
+  sudo apt-get update -y
+  sudo apt-get install -y terraform
+else
+  echo "==> Terraform already installed: $(terraform version | head -n1)"
+fi
+
+
+# -----------------------------
+# Docker Engine + Compose plugin
+# -----------------------------
+if ! command -v docker >/dev/null 2>&1; then
+  echo "==> Installing Docker Engine..."
+  sudo install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+    sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+     https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
+     sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+
+  sudo apt-get update -y
+  sudo apt-get install -y \
+    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+else
+  echo "==> Docker already installed: $(docker --version)"
+fi
+
+echo "==> Ensuring Docker is enabled and running..."
+sudo systemctl enable --now docker
+
+# Add user to docker group for non-sudo usage (requires re-login to take effect)
+if ! id -nG "$LOGIN_USER" | grep -qw docker; then
+  echo "==> Adding ${LOGIN_USER} to 'docker' group (you may need to log out/in for this to take effect)"
+  sudo usermod -aG docker "$LOGIN_USER"
+fi
+
+
+# -----------------------------
+# Project structure checks
+# -----------------------------
+if [ ! -d "$TF_DIR" ]; then
+  echo "ERROR: Terraform directory '$TF_DIR' not found. Run this from the project root (~/ibex-task)."
+  exit 1
+fi
+mkdir -p "$KEYS_DIR"
+
+
+# -----------------------------
+# Generate SSH key for EC2 (used by Terraform)
+# -----------------------------
+if [ ! -f "$SSH_KEY_PATH" ]; then
+  echo "==> Generating SSH key pair at $SSH_KEY_PATH ..."
+  ssh-keygen -t rsa -b 4096 -N "" -f "$SSH_KEY_PATH" -C "${LOGIN_USER}@ibex-task"
+  chmod 600 "$SSH_KEY_PATH"
+  chmod 644 "${SSH_KEY_PATH}.pub"
+else
+  echo "==> SSH key already exists at $SSH_KEY_PATH"
+fi
+
+PUB_KEY_CONTENT="$(cat "${SSH_KEY_PATH}.pub")"
+
+
+# -----------------------------
+# Detect your public IP for SSH allowlist
+# -----------------------------
+echo "==> Detecting your public IP for SSH allowlist..."
+MY_IP="$(curl -sS https://checkip.amazonaws.com || true)"
+if [[ -z "${MY_IP}" ]]; then
+  echo "WARNING: Could not detect public IP. Falling back to 0.0.0.0/0 (NOT recommended for SSH)."
+  SSH_CIDR="0.0.0.0/0"
+else
+  SSH_CIDR="${MY_IP}/32"
+fi
+echo "==> Using SSH CIDR: ${SSH_CIDR}"
+
+
+# -----------------------------
+# Create terraform.auto.tfvars if missing
+# (Non-destructive: will not overwrite if you already customized terraform.tfvars)
+# -----------------------------
+if [ ! -f "$AUTO_TFVARS" ]; then
+  echo "==> Creating ${AUTO_TFVARS} with sane defaults..."
+  cat > "$AUTO_TFVARS" <<EOF
+# Auto-generated by init.sh — safe to edit.
+# If your variables have different names, map them here accordingly.
+
+# Common patterns; adjust to match your variables.tf
+key_pair_name   = "${KEY_NAME_DEFAULT}"
+public_key      = "${PUB_KEY_CONTENT}"
+
+# Network/instance defaults
+allowed_ssh_cidr = "${SSH_CIDR}"
+instance_type    = "${INSTANCE_TYPE_DEFAULT}"
+
+# S3 bucket (must be globally unique; tweak if collision)
+bucket_name      = "${BUCKET_NAME_DEFAULT}"
+
+# Region (if your modules expect it)
+region = "$(aws configure get region || echo ${AWS_REGION_DEFAULT})"
+EOF
+else
+  echo "==> ${AUTO_TFVARS} already exists. Leaving it untouched."
+fi
+
+
+# -----------------------------
+# Optional: Jenkins (Docker) for CI/CD
+# -----------------------------
+if [ "${START_JENKINS}" = "true" ]; then
+  echo "==> Starting Jenkins in Docker (http://<this-ec2-ip>:8080)..."
+  sudo docker volume create jenkins_home >/dev/null
+  sudo docker run -d --name jenkins \
+    -p 8080:8080 -p 50000:50000 \
+    -v jenkins_home:/var/jenkins_home \
+    --restart unless-stopped \
+    jenkins/jenkins:lts
+  echo "==> Jenkins admin password (initial):"
+  sleep 3 || true
+  sudo docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword || true
+fi
+
+# -----------------------------
+# Final hints
+# -----------------------------
+echo
+echo "✅ Setup complete."
+echo "Next steps:"
+echo "  1) Ensure your AWS credentials are set (ACCESS KEY/SECRET) for this user/session."
+echo "     - Run: aws configure"
+echo "  2) Apply infrastructure:"
+echo "       cd ${TF_DIR}"
+echo "       terraform init"
+echo "       terraform apply"
+echo
+echo "Notes:"
+echo "  - Generated SSH key: ${SSH_KEY_PATH} (public: ${SSH_KEY_PATH}.pub)"
+echo "  - Vars file: ${AUTO_TFVARS}"
+echo "  - SSH CIDR used: ${SSH_CIDR}"
+echo "  - Region: $(aws configure get region || echo ${AWS_REGION_DEFAULT})"

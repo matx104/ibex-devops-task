@@ -1,0 +1,48 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.auto.tfvars
+
+# SSH Keys
+*.pem
+*.key
+*.pub
+keys/
+
+# AWS
+.aws/
+
+# Environment
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Docker
+.docker/
+
+# Build
+dist/
+build/
+target/
+
+# Temporary
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Outputs
+outputs.json
+instance_ip.txt

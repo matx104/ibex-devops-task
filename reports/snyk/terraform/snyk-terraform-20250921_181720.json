@@ -1,0 +1,4 @@
+FailedToGetIacOrgSettingsError: Failed to fetch IaC organization settings
+    at /snapshot/snyk/dist/cli/webpack:/snyk/src/cli/commands/test/iac/local-execution/org-settings/get-iac-org-settings.ts:31:23
+    at makeRequestWrapper (/snapshot/snyk/dist/cli/webpack:/snyk/src/lib/request/index.ts:27:7)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)

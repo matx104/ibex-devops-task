@@ -1,0 +1,317 @@
+// Jenkinsfile - Production-Ready Jenkins CI/CD Pipeline
+pipeline {
+    agent any
+    
+    environment {
+        // Docker Hub Configuration
+        DOCKER_IMAGE_NAME = 'ibex-webapp'
+        DOCKER_HUB_REPO = 'monarchxmat/ibex-webapp'  // Hardcoded for demo
+        
+        // AWS Configuration - Using actual deployed values
+        EC2_HOST = '3.135.235.20'  // Your actual EC2 IP
+        EC2_USER = 'ec2-user'
+        S3_BUCKET = 'ibex-devops-project-sept-2025'  // Your actual S3 bucket
+        AWS_DEFAULT_REGION = 'us-east-2'  // Your actual region
+        
+        // Build Configuration
+        BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT}"
+    }
+    
+    parameters {
+        choice(name: 'ACTION', choices: ['deploy', 'rollback', 'test-only'], description: 'Action to perform')
+        choice(name: 'ENVIRONMENT', choices: ['dev', 'staging', 'prod'], description: 'Deployment environment')
+        booleanParam(name: 'SKIP_TESTS', defaultValue: false, description: 'Skip running tests')
+        booleanParam(name: 'SKIP_SECURITY_SCAN', defaultValue: false, description: 'Skip security scanning')
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo '🔍 Checking out source code...'
+                checkout scm
+                
+                script {
+                    // Get commit hash for tagging
+                    env.GIT_COMMIT_SHORT = sh(
+                        script: "git rev-parse --short HEAD || echo 'local'",
+                        returnStdout: true
+                    ).trim()
+                    env.BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+                    env.TIMESTAMP = sh(script: "date +%Y%m%d_%H%M%S", returnStdout: true).trim()
+                }
+                
+                echo "Build Tag: ${env.BUILD_TAG}"
+            }
+        }
+        
+        stage('Validate') {
+            steps {
+                echo '✅ Validating project structure...'
+                sh '''
+                    # Check required files
+                    echo "Checking Dockerfile..."
+                    if [ -f app/Dockerfile ]; then
+                        echo "✓ Dockerfile found in app/"
+                        cd app
+                    elif [ -f Dockerfile ]; then
+                        echo "✓ Dockerfile found in root"
+                    else
+                        echo "✗ Dockerfile not found!"
+                        exit 1
+                    fi
+                    
+                    # Check Terraform files
+                    echo "Checking Terraform configuration..."
+                    if [ -d terraform ]; then
+                        echo "✓ Terraform directory found"
+                        ls -la terraform/*.tf | head -5
+                    fi
+                    
+                    # Check application files
+                    echo "Checking application files..."
+                    if [ -f app/index.html ]; then
+                        echo "✓ Application files found"
+                    fi
+                '''
+            }
+        }
+        
+        stage('Security Scan') {
+            when {
+                expression { params.SKIP_SECURITY_SCAN != true }
+            }
+            parallel {
+                stage('Scan Dockerfile') {
+                    steps {
+                        echo '🔒 Scanning Dockerfile with Trivy...'
+                        sh '''
+                            # Check if Trivy is installed, if not use Docker
+                            if command -v trivy &> /dev/null; then
+                                trivy config app/ || true
+                            else
+                                docker run --rm -v "$PWD":/src aquasec/trivy:latest config /src/app || true
+                            fi
+                        '''
+                    }
+                }
+                stage('Scan Terraform') {
+                    steps {
+                        echo '🔒 Scanning Terraform with Checkov...'
+                        sh '''
+                            # Use Docker to run Checkov
+                            docker run --rm -v "$PWD/terraform":/tf bridgecrew/checkov:latest -d /tf --framework terraform || true
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Build Docker Image') {
+            when {
+                expression { params.ACTION != 'rollback' }
+            }
+            steps {
+                echo "🔨 Building Docker image..."
+                dir('app') {
+                    sh """
+                        # Build the Docker image
+                        docker build -t ${DOCKER_HUB_REPO}:${env.BUILD_TAG} .
+                        
+                        # Tag as latest and environment-specific
+                        docker tag ${DOCKER_HUB_REPO}:${env.BUILD_TAG} ${DOCKER_HUB_REPO}:latest
+                        docker tag ${DOCKER_HUB_REPO}:${env.BUILD_TAG} ${DOCKER_HUB_REPO}:${params.ENVIRONMENT}
+                        
+                        # List created images
+                        docker images | grep ${DOCKER_IMAGE_NAME}
+                    """
+                }
+            }
+        }
+        
+        stage('Test Container') {
+            when {
+                allOf {
+                    expression { params.SKIP_TESTS != true }
+                    expression { params.ACTION != 'rollback' }
+                }
+            }
+            steps {
+                echo '🧪 Testing container...'
+                sh """
+                    # Run container for testing
+                    docker run -d --name test-${BUILD_TAG} -p 8888:80 ${DOCKER_HUB_REPO}:${env.BUILD_TAG}
+                    
+                    # Wait for container to start
+                    sleep 5
+                    
+                    # Test if container is responding
+                    curl -f http://localhost:8888 || (docker logs test-${BUILD_TAG} && exit 1)
+                    
+                    # Clean up test container
+                    docker stop test-${BUILD_TAG}
+                    docker rm test-${BUILD_TAG}
+                    
+                    echo "✓ Container tests passed"
+                """
+            }
+        }
+        
+        stage('Push to Registry') {
+            when {
+                allOf {
+                    expression { params.ACTION == 'deploy' }
+                    expression { params.ENVIRONMENT in ['staging', 'prod'] }
+                }
+            }
+            steps {
+                echo '📤 Pushing to Docker Hub...'
+                script {
+                    // Check if credentials are available
+                    try {
+                        withCredentials([usernamePassword(
+                            credentialsId: 'docker-hub-creds',
+                            passwordVariable: 'DOCKER_PASS',
+                            usernameVariable: 'DOCKER_USER'
+                        )]) {
+                            sh """
+                                echo \${DOCKER_PASS} | docker login -u \${DOCKER_USER} --password-stdin
+                                docker push ${DOCKER_HUB_REPO}:${env.BUILD_TAG}
+                                docker push ${DOCKER_HUB_REPO}:latest
+                                docker push ${DOCKER_HUB_REPO}:${params.ENVIRONMENT}
+                                docker logout
+                            """
+                        }
+                    } catch (Exception e) {
+                        echo "⚠️  Docker Hub credentials not configured. Skipping push."
+                        echo "   To enable: Add 'docker-hub-creds' in Jenkins credentials"
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to EC2') {
+            when {
+                expression { params.ACTION == 'deploy' }
+            }
+            steps {
+                echo "🚀 Deploying to EC2 (${EC2_HOST})..."
+                script {
+                    // Try with SSH key if available, otherwise provide instructions
+                    try {
+                        withCredentials([sshUserPrivateKey(
+                            credentialsId: 'ec2-ssh-key',
+                            keyFileVariable: 'SSH_KEY',
+                            usernameVariable: 'SSH_USER'
+                        )]) {
+                            sh """
+                                # Deploy via SSH
+                                ssh -o StrictHostKeyChecking=no -i \${SSH_KEY} ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
+                                    # Pull and run the container
+                                    docker pull ${DOCKER_HUB_REPO}:latest || docker pull ${DOCKER_HUB_REPO}:${params.ENVIRONMENT} || echo "Using local image"
+                                    docker stop ${DOCKER_IMAGE_NAME} 2>/dev/null || true
+                                    docker rm ${DOCKER_IMAGE_NAME} 2>/dev/null || true
+                                    docker run -d --name ${DOCKER_IMAGE_NAME} -p 80:80 --restart unless-stopped ${DOCKER_HUB_REPO}:latest
+                                    docker ps
+                                    echo "Deployment complete at \$(date)" | aws s3 cp - s3://${S3_BUCKET}/deployments/${env.TIMESTAMP}_jenkins.log || true
+ENDSSH
+                            """
+                        }
+                    } catch (Exception e) {
+                        echo """
+                        ⚠️  SSH credentials not configured. 
+                        
+                        To deploy manually, run:
+                        ssh -i YOUR_KEY.pem ec2-user@${EC2_HOST}
+                        docker pull ${DOCKER_HUB_REPO}:latest
+                        docker stop ${DOCKER_IMAGE_NAME} && docker rm ${DOCKER_IMAGE_NAME}
+                        docker run -d --name ${DOCKER_IMAGE_NAME} -p 80:80 ${DOCKER_HUB_REPO}:latest
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Health Check') {
+            when {
+                expression { params.ACTION == 'deploy' }
+            }
+            steps {
+                echo '❤️  Performing health check...'
+                script {
+                    def maxRetries = 3
+                    def retryCount = 0
+                    def healthy = false
+                    
+                    while (retryCount < maxRetries && !healthy) {
+                        try {
+                            sh """
+                                response=\$(curl -s -o /dev/null -w "%{http_code}" http://${EC2_HOST})
+                                if [ "\$response" = "200" ]; then
+                                    echo "✓ Application is healthy (HTTP 200)"
+                                    exit 0
+                                else
+                                    echo "✗ Unexpected response: HTTP \$response"
+                                    exit 1
+                                fi
+                            """
+                            healthy = true
+                        } catch (Exception e) {
+                            retryCount++
+                            if (retryCount < maxRetries) {
+                                echo "Retry ${retryCount}/${maxRetries}..."
+                                sleep 10
+                            }
+                        }
+                    }
+                    
+                    if (!healthy) {
+                        error("Health check failed after ${maxRetries} attempts")
+                    }
+                }
+            }
+        }
+        
+        stage('Rollback') {
+            when {
+                expression { params.ACTION == 'rollback' }
+            }
+            steps {
+                echo '⏮️  Rolling back to previous version...'
+                script {
+                    echo """
+                    To rollback manually:
+                    1. SSH to EC2: ssh -i YOUR_KEY.pem ec2-user@${EC2_HOST}
+                    2. List images: docker images ${DOCKER_HUB_REPO}
+                    3. Run previous: docker run -d --name ${DOCKER_IMAGE_NAME} -p 80:80 ${DOCKER_HUB_REPO}:PREVIOUS_TAG
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo '🧹 Cleaning up...'
+            sh """
+                # Clean up local Docker images to save space
+                docker images | grep ${DOCKER_IMAGE_NAME} | grep -v latest | awk '{print \$3}' | xargs -r docker rmi -f || true
+                docker system prune -f || true
+            """
+        }
+        
+        success {
+            echo """
+            ✅ Pipeline completed successfully!
+            
+            📌 Application URL: http://${EC2_HOST}
+            📦 Docker Image: ${DOCKER_HUB_REPO}:${env.BUILD_TAG}
+            🪣 S3 Bucket: ${S3_BUCKET}
+            🏷️ Environment: ${params.ENVIRONMENT}
+            """
+        }
+        
+        failure {
+            echo '❌ Pipeline failed! Check the logs above for details.'
+        }
+    }
+}
