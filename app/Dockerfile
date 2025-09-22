@@ -14,6 +14,9 @@ RUN npm ci --only=production
 # Copy application files
 COPY . .
 
+# Build the application
+RUN npm run build
+
 # Stage 2: Production stage
 FROM nginx:alpine
 
