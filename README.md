@@ -328,3 +328,4 @@ For questions about this submission:
 ---
 
 **Note**: This project was created as part of the Ibex Multi-Cloud DevOps Engineer interview process. All resources are designed to run within AWS Free Tier limits.
+## 📊 [View Technical Presentation](./PRESENTATION.md)
