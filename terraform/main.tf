@@ -359,6 +359,11 @@ data "aws_ami" "amazon_linux_2" {
   }
 }
 
+ resource "aws_ec2_instance_state" "docker_host" {
+   instance_id = aws_instance.docker_host.id
+   state       = "stopped"
+}
+
 # Optional: Create IAM User with programmatic access
 resource "aws_iam_user" "cicd_user" {
   count = var.create_iam_user ? 1 : 0
@@ -445,6 +450,11 @@ resource "aws_iam_user_policy" "cicd_policy" {
    key_name              = aws_key_pair.ec2_key_pair.key_name
    subnet_id              = aws_subnet.public.id
    vpc_security_group_ids = [aws_security_group.bastion_sg.id]
+
+ resource "aws_ec2_instance_state" "bastion" {
+   instance_id = aws_instance.bastion.id
+   state       = "stopped"
+}
    
    tags = {
      Name        = "${var.project_name}-bastion"
