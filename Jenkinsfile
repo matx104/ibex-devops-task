@@ -54,9 +54,9 @@ pipeline {
       steps {
         sh """
           set -e
-          docker run -d --name test-container -p 8080:80 ${DOCKER_REPO}:${IMAGE_TAG}
+          docker run -d --name test-container -p 8081:80 ${DOCKER_REPO}:${IMAGE_TAG}
           sleep 10
-          curl -f http://localhost:8080
+          curl -f http://localhost:8081
           docker stop test-container
           docker rm test-container
         """
