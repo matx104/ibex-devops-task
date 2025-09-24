@@ -2,26 +2,43 @@
 # Copy this file to terraform.tfvars and update with your values
 
 # AWS Configuration
-aws_region = "us-east-1"
+aws_region = "us-east-2"  # Change to your preferred region
 
 # Project Configuration
-project_name = "ibex-devops"
-environment  = "dev"
+project_name = "ibex-devops-task"  # Change to your project name
+environment  = "dev"               # dev, staging, or prod
+
+# VPC and Networking Configuration
+vpc_cidr            = "10.0.0.0/16"   # VPC CIDR block
+public_subnet_cidr  = "10.0.1.0/24"   # Public subnet CIDR
+private_subnet_cidr = "10.0.2.0/24"   # Private subnet CIDR
 
 # EC2 Configuration
-instance_type = "t2.micro"
+instance_type = "t2.micro"  # Instance size (t2.micro is free tier)
 
 # Security Configuration
-# Replace with your actual IP address for better security
-# You can get your IP from: https://whatismyipaddress.com/
-allowed_ssh_ips = ["YOUR_IP_ADDRESS/32"]
+# IMPORTANT: Replace with your actual IP address for better security
+# Get your IP from: https://whatismyipaddress.com/
+# Format: ["YOUR_IP_ADDRESS/32"] for single IP or ["IP1/32", "IP2/32"] for multiple
+allowed_ssh_ips = ["0.0.0.0/0"]  # CHANGE THIS - currently allows SSH from anywhere
 
 # S3 Configuration
-# Must be globally unique - add a random suffix or your username
-s3_bucket_name = "ibex-devops-artifacts-YOUR_UNIQUE_SUFFIX"
+# Must be globally unique - add a random suffix, your username, or timestamp
+# Example: "ibex-devops-artifacts-john-doe-2025" or "ibex-devops-artifacts-abc123"
+s3_bucket_name = "ibex-devops-task-bucket-YOUR_UNIQUE_SUFFIX"
 
 # IAM Configuration
-create_iam_user = true
+create_iam_user = true  # Set to false if you don't need a CI/CD IAM user
 
 # Docker Configuration
-docker_hub_username = "your_dockerhub_username"
+docker_image        = "nginx:latest"           # Docker image to deploy
+docker_hub_username = "your_dockerhub_username"  # Your Docker Hub username (keep quotes)
+
+# Example with actual values (commented out):
+# aws_region = "us-west-2"
+# project_name = "my-webapp"
+# environment = "prod"
+# instance_type = "t3.small"
+# allowed_ssh_ips = ["203.0.113.12/32", "198.51.100.5/32"]  # Office and home IPs
+# s3_bucket_name = "my-webapp-artifacts-prod-2025-abc123"
+# docker_hub_username = "johndoe"

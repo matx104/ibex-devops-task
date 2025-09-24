@@ -1,5 +1,3 @@
-# main.tf - Main Terraform Configuration
-
 terraform {
   required_version = ">= 1.0"
   required_providers {
@@ -16,6 +14,137 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
+}
+
+# Data source for availability zones
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+# Create VPC
+resource "aws_vpc" "main" {
+  cidr_block           = var.vpc_cidr
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name        = "${var.project_name}-vpc"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Create Internet Gateway
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name        = "${var.project_name}-igw"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Create Public Subnet
+resource "aws_subnet" "public" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = var.public_subnet_cidr
+  availability_zone       = data.aws_availability_zones.available.names[0]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name        = "${var.project_name}-public-subnet"
+    Type        = "Public"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Create Private Subnet
+resource "aws_subnet" "private" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.private_subnet_cidr
+  availability_zone = data.aws_availability_zones.available.names[1]
+
+  tags = {
+    Name        = "${var.project_name}-private-subnet"
+    Type        = "Private"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Create Elastic IP for NAT Gateway
+resource "aws_eip" "nat" {
+  domain = "vpc"
+
+  tags = {
+    Name        = "${var.project_name}-nat-eip"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+
+  depends_on = [aws_internet_gateway.main]
+}
+
+# Create NAT Gateway
+resource "aws_nat_gateway" "main" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public.id
+
+  tags = {
+    Name        = "${var.project_name}-nat"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+
+  depends_on = [aws_internet_gateway.main]
+}
+
+# Create Route Table for Public Subnet
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+
+  tags = {
+    Name        = "${var.project_name}-public-rt"
+    Type        = "Public"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Create Route Table for Private Subnet
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.main.id
+  }
+
+  tags = {
+    Name        = "${var.project_name}-private-rt"
+    Type        = "Private"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Associate Public Subnet with Public Route Table
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
+
+# Associate Private Subnet with Private Route Table
+resource "aws_route_table_association" "private" {
+  subnet_id      = aws_subnet.private.id
+  route_table_id = aws_route_table.private.id
 }
 
 # Generate SSH Key Pair
@@ -42,23 +171,11 @@ resource "local_file" "private_key" {
   file_permission = "0400"
 }
 
-# VPC and Networking (using default VPC for simplicity)
-data "aws_vpc" "default" {
-  default = true
-}
-
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-}
-
 # Security Group for EC2
 resource "aws_security_group" "ec2_sg" {
   name        = "${var.project_name}-ec2-sg"
   description = "Security group for EC2 instance"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id  # Changed to use our VPC
 
   ingress {
     description = "SSH from allowed IPs"
@@ -72,6 +189,14 @@ resource "aws_security_group" "ec2_sg" {
     description = "HTTP from anywhere"
     from_port   = 80
     to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS from anywhere"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -185,11 +310,12 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   role = aws_iam_role.ec2_role.name
 }
 
-# EC2 Instance
+# EC2 Instance in Public Subnet
 resource "aws_instance" "docker_host" {
   ami                    = data.aws_ami.amazon_linux_2.id
   instance_type          = var.instance_type
   key_name              = aws_key_pair.ec2_key_pair.key_name
+  subnet_id              = aws_subnet.public.id  # Deploy to public subnet
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
   
@@ -208,6 +334,7 @@ resource "aws_instance" "docker_host" {
     Name        = "${var.project_name}-docker-host"
     Environment = var.environment
     ManagedBy   = "Terraform"
+    Subnet      = "Public"
   }
 
   # Create a provisioner to save instance details
@@ -309,3 +436,48 @@ resource "aws_iam_user_policy" "cicd_policy" {
     ]
   })
 }
+
+# Create a bastion host in public subnet for secure access to private resources
+# Uncomment if you need a bastion/jump host
+ resource "aws_instance" "bastion" {
+   ami                    = data.aws_ami.amazon_linux_2.id
+   instance_type          = "t2.micro"
+   key_name              = aws_key_pair.ec2_key_pair.key_name
+   subnet_id              = aws_subnet.public.id
+   vpc_security_group_ids = [aws_security_group.bastion_sg.id]
+   
+   tags = {
+     Name        = "${var.project_name}-bastion"
+     Environment = var.environment
+     ManagedBy   = "Terraform"
+   }
+ }
+
+# Security group for bastion host
+ resource "aws_security_group" "bastion_sg" {
+   name        = "${var.project_name}-bastion-sg"
+   description = "Security group for bastion host"
+   vpc_id      = aws_vpc.main.id
+
+   ingress {
+     description = "SSH from allowed IPs"
+     from_port   = 22
+     to_port     = 22
+     protocol    = "tcp"
+     cidr_blocks = var.allowed_ssh_ips
+   }
+
+   egress {
+     description = "Allow all outbound"
+     from_port   = 0
+     to_port     = 0
+     protocol    = "-1"
+     cidr_blocks = ["0.0.0.0/0"]
+   }
+
+   tags = {
+     Name        = "${var.project_name}-bastion-sg"
+     Environment = var.environment
+     ManagedBy   = "Terraform"
+   }
+ }
