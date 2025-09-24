@@ -1,4 +1,5 @@
-# terraform/variables.tf - Root module variables
+# variables.tf - Terraform Variables Configuration
+
 variable "aws_region" {
   description = "AWS region"
   type        = string
@@ -14,7 +15,7 @@ variable "project_name" {
 variable "environment" {
   description = "Environment name"
   type        = string
-  default     = "dev"
+  default     = "prod"
 }
 
 variable "instance_type" {
@@ -24,8 +25,9 @@ variable "instance_type" {
 }
 
 variable "s3_bucket_name" {
-  description = "S3 bucket name"
+  description = "Name of the S3 bucket for artifacts"
   type        = string
+  default     = "" 
 }
 
 variable "allowed_ssh_ips" {
@@ -38,4 +40,17 @@ variable "create_iam_user" {
   description = "Whether to create IAM user for CI/CD"
   type        = bool
   default     = true
+}
+
+variable "docker_image" {
+  description = "Docker image to deploy"
+  type        = string
+  default     = "nginx:latest"
+}
+
+variable "docker_hub_username" {
+  description = "Docker Hub username"
+  type        = string
+  default     = "monarchxmat"
+  sensitive   = true
 }
