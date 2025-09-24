@@ -450,11 +450,6 @@ resource "aws_iam_user_policy" "cicd_policy" {
    key_name              = aws_key_pair.ec2_key_pair.key_name
    subnet_id              = aws_subnet.public.id
    vpc_security_group_ids = [aws_security_group.bastion_sg.id]
-
- resource "aws_ec2_instance_state" "bastion" {
-   instance_id = aws_instance.bastion.id
-   state       = "stopped"
-}
    
    tags = {
      Name        = "${var.project_name}-bastion"
@@ -462,6 +457,11 @@ resource "aws_iam_user_policy" "cicd_policy" {
      ManagedBy   = "Terraform"
    }
  }
+
+ resource "aws_ec2_instance_state" "bastion" {
+   instance_id = aws_instance.bastion.id
+   state       = "stopped"
+}
 
 # Security group for bastion host
  resource "aws_security_group" "bastion_sg" {
