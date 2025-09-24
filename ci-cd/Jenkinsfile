@@ -1,174 +1,162 @@
-// Jenkinsfile - Simple Jenkins CI/CD Pipeline
-
 pipeline {
     agent any
-    
+
     environment {
-        // Docker Hub credentials
+        // Docker Hub credentials (assumes 'docker-hub-creds' is Username+Password)
         DOCKER_HUB_CREDENTIALS = credentials('docker-hub-creds')
+        DOCKER_HUB_CREDENTIALS_USR = 'monarchxmat'
         DOCKER_IMAGE_NAME = 'ibex-webapp'
         DOCKER_HUB_REPO = "${DOCKER_HUB_CREDENTIALS_USR}/${DOCKER_IMAGE_NAME}"
-        
+
         // EC2 configuration
-        EC2_SSH_KEY = credentials('ec2-ssh-key')
-        EC2_PUBLIC_IP = credentials('ec2-public-ip')
+        EC2_SSH_KEY = credentials('ec2-ssh-key')     // private-key-text
+        EC2_PUBLIC_IP = credentials('ec2-public-ip') // secret text with the IP
         EC2_USER = 'ec2-user'
-        
+
         // S3 bucket
         S3_BUCKET = credentials('s3-bucket-name')
     }
-    
+
     parameters {
-        choice(
-            name: 'ENVIRONMENT',
-            choices: ['dev', 'staging', 'prod'],
-            description: 'Deployment environment'
-        )
-        booleanParam(
-            name: 'SKIP_TESTS',
-            defaultValue: false,
-            description: 'Skip tests'
-        )
+        choice(name: 'ENVIRONMENT', choices: ['dev', 'staging', 'prod'], description: 'Deployment environment')
+        booleanParam(name: 'SKIP_TESTS', defaultValue: false, description: 'Skip tests')
     }
-    
+
     triggers {
-        // Trigger on GitHub push
         githubPush()
     }
-    
+
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
                 script {
-                    env.GIT_COMMIT_SHORT = sh(
-                        script: "git rev-parse --short HEAD",
-                        returnStdout: true
-                    ).trim()
-                    env.BUILD_TAG = "${params.ENVIRONMENT}-${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+                    // Use commit hash for tagging
+                    env.GIT_COMMIT_FULL  = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
+                    env.IMAGE_TAG        = sh(script: "git rev-parse --short=12 HEAD", returnStdout: true).trim()
+                    env.BUILD_TAG        = "${params.ENVIRONMENT}-${env.BUILD_NUMBER}-${env.IMAGE_TAG}"  // optional meta tag
                 }
             }
         }
-        
+
         stage('Build Docker Image') {
             steps {
                 sh """
-                    docker build -t ${DOCKER_HUB_REPO}:${env.BUILD_TAG} .
-                    docker tag ${DOCKER_HUB_REPO}:${env.BUILD_TAG} ${DOCKER_HUB_REPO}:${params.ENVIRONMENT}
-                    docker tag ${DOCKER_HUB_REPO}:${env.BUILD_TAG} ${DOCKER_HUB_REPO}:latest
+                    set -e
+                    # Build image tagged with commit hash
+                    docker build -t ${DOCKER_HUB_REPO}:${env.IMAGE_TAG} .
+
+                    # Optional: also keep an ENV alias (helpful for rollbacks by environment)
+                    docker tag ${DOCKER_HUB_REPO}:${env.IMAGE_TAG} ${DOCKER_HUB_REPO}:${params.ENVIRONMENT}
+
+                    # NOTE: no ':latest' tag
                 """
             }
         }
-        
+
         stage('Test') {
-            when {
-                expression { params.SKIP_TESTS != true }
-            }
+            when { expression { params.SKIP_TESTS != true } }
             steps {
                 sh """
-                    # Start test container
-                    docker run -d --name test-container -p 8080:80 ${DOCKER_HUB_REPO}:${env.BUILD_TAG}
+                    set -e
+                    docker run -d --name test-container -p 8080:80 ${DOCKER_HUB_REPO}:${env.IMAGE_TAG}
                     sleep 10
-                    
-                    # Test HTTP response
-                    curl -f http://localhost:8080 || exit 1
-                    
-                    # Cleanup
+                    curl -f http://localhost:8080
                     docker stop test-container
                     docker rm test-container
                 """
             }
         }
-        
+
         stage('Push to Docker Hub') {
             steps {
                 sh """
+                    set -e
                     echo ${DOCKER_HUB_CREDENTIALS_PSW} | docker login -u ${DOCKER_HUB_CREDENTIALS_USR} --password-stdin
-                    docker push ${DOCKER_HUB_REPO}:${env.BUILD_TAG}
+                    docker push ${DOCKER_HUB_REPO}:${env.IMAGE_TAG}
                     docker push ${DOCKER_HUB_REPO}:${params.ENVIRONMENT}
-                    docker push ${DOCKER_HUB_REPO}:latest
                     docker logout
                 """
             }
         }
-        
+
         stage('Deploy to EC2') {
             steps {
                 sh """
-                    # Create deployment script
-                    cat > deploy.sh << 'EOF'
+                    set -e
+                    # Create deployment script (unquoted heredoc => Jenkins interpolates env vars here)
+                    cat > /tmp/deploy.sh << EOF
 #!/bin/bash
 set -e
 
-echo "Starting deployment..."
+echo "Starting deployment of tag ${env.IMAGE_TAG}..."
 
 # Login to Docker Hub
 echo "${DOCKER_HUB_CREDENTIALS_PSW}" | docker login -u ${DOCKER_HUB_CREDENTIALS_USR} --password-stdin
 
-# Stop existing container
+# Stop and remove existing container if present
 docker stop ${DOCKER_IMAGE_NAME} 2>/dev/null || true
 docker rm ${DOCKER_IMAGE_NAME} 2>/dev/null || true
 
-# Pull and run new image
-docker pull ${DOCKER_HUB_REPO}:${params.ENVIRONMENT}
+# Pull and run the exact commit-tagged image
+docker pull ${DOCKER_HUB_REPO}:${env.IMAGE_TAG}
 docker run -d \\
-    --name ${DOCKER_IMAGE_NAME} \\
-    -p 80:80 \\
-    --restart unless-stopped \\
-    ${DOCKER_HUB_REPO}:${params.ENVIRONMENT}
+  --name ${DOCKER_IMAGE_NAME} \\
+  -p 80:80 \\
+  --restart unless-stopped \\
+  ${DOCKER_HUB_REPO}:${env.IMAGE_TAG}
 
 # Verify deployment
 sleep 5
-if curl -f http://localhost; then
-    echo "Deployment successful!"
+if curl -fsS http://localhost >/dev/null; then
+  echo "Deployment successful!"
 else
-    echo "Deployment failed!"
-    exit 1
+  echo "Deployment failed!"
+  exit 1
 fi
 
 docker logout
 EOF
 
+                    chmod +x /tmp/deploy.sh
+
                     # Copy and execute on EC2
-                    scp -i ${EC2_SSH_KEY} -o StrictHostKeyChecking=no deploy.sh ${EC2_USER}@${EC2_PUBLIC_IP}:/tmp/
-                    ssh -i ${EC2_SSH_KEY} -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_PUBLIC_IP} 'chmod +x /tmp/deploy.sh && /tmp/deploy.sh'
+                    scp -i ${EC2_SSH_KEY} -o StrictHostKeyChecking=no /tmp/deploy.sh ${EC2_USER}@${EC2_PUBLIC_IP}:/tmp/
+                    ssh -i ${EC2_SSH_KEY} -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_PUBLIC_IP} 'bash /tmp/deploy.sh && rm -f /tmp/deploy.sh'
                 """
             }
         }
-        
+
         stage('Health Check') {
             steps {
                 sh """
-                    # Wait and test the deployed application
+                    set -e
                     sleep 10
-                    response=\$(curl -s -o /dev/null -w "%{http_code}" http://${EC2_PUBLIC_IP})
-                    if [ "\$response" = "200" ]; then
-                        echo "Health check passed!"
+                    code=\$(curl -s -o /dev/null -w "%{http_code}" http://${EC2_PUBLIC_IP})
+                    if [ "\$code" = "200" ]; then
+                      echo "Health check passed!"
                     else
-                        echo "Health check failed with status: \$response"
-                        exit 1
+                      echo "Health check failed with status: \$code"
+                      exit 1
                     fi
                 """
             }
         }
     }
-    
+
     post {
         always {
             sh """
-                # Cleanup local images
-                docker rmi ${DOCKER_HUB_REPO}:${env.BUILD_TAG} || true
+                docker rmi ${DOCKER_HUB_REPO}:${env.IMAGE_TAG} || true
                 docker system prune -f || true
             """
         }
-        
         success {
-            echo "Pipeline completed successfully!"
-            echo "Application is running at: http://${EC2_PUBLIC_IP}"
+            echo "Pipeline OK. Deployed ${DOCKER_HUB_REPO}:${env.IMAGE_TAG}"
+            echo "Application: http://${EC2_PUBLIC_IP}"
         }
-        
         failure {
-            echo "Pipeline failed!"
+            echo "Pipeline failed."
         }
     }
 }
