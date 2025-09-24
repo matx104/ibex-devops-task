@@ -4,7 +4,7 @@ echo "⚠️  This will destroy all infrastructure!"
 echo "Are you sure? (yes/no)"
 read confirm
 if [ "$confirm" == "yes" ]; then
-    cd terraform
+    cd ../terraform
     terraform destroy -auto-approve
     echo "✅ Infrastructure destroyed"
 fi
