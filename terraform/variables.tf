@@ -68,7 +68,7 @@ variable "create_iam_user" {
 variable "docker_image" {
   description = "Docker image to deploy"
   type        = string
-  default     = "nginx:latest"
+  default     = "ibex-webapp:latest"
 }
 
 variable "docker_hub_username" {
